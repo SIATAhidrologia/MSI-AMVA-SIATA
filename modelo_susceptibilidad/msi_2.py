@@ -13,6 +13,10 @@ from netCDF4 import Dataset
 ## especifican es porque son rutas diferentes a las que tenemos establecidas
 
 ## SOLO SE MODIFICÓ EL __INIT__ Y EL GENERAR_MAPAS_TEMPERATURAS
+
+## Mónica Álvarez (julio de 2024): se agrega nueva función para crear un nuevo mapa de temperaturas a partir deuna regresión
+# en caso de que falte el pronóstico
+
 class msi_2(wmf.SimuBasin):
     '''Clase para utilizar las funciones de graficacion, ejecucion y lectura de resultados 
     del modelo de susceptibilidad a incendios en cobertura vegetal (MSI), por medio del 
