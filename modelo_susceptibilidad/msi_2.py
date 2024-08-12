@@ -1,11 +1,16 @@
+#%%
 from wmf import wmf
 import matplotlib as _matplotlib
+#%%
 import matplotlib.pyplot as _plt
 import datetime as _datetime
 import numpy as np
 import pandas as pd
 import os
 from netCDF4 import Dataset
+import sys
+sys.path.insert(0,"/home/hidrologia/Hidrologia/SIATA_hidrologia/")
+import hidrologia as _hidro
 
 ##Réplica del MSI oficial, con el cambio que se le puede ingresar la fecha que se quiere modelar, si no se ingresa nada
 ## en la fecha se correrá el modelo con la hora y el día actual.
@@ -16,6 +21,7 @@ from netCDF4 import Dataset
 
 ## Mónica Álvarez (julio de 2024): se agrega nueva función para crear un nuevo mapa de temperaturas a partir deuna regresión
 # en caso de que falte el pronóstico
+
 
 class msi_2(wmf.SimuBasin):
     '''Clase para utilizar las funciones de graficacion, ejecucion y lectura de resultados 
@@ -58,8 +64,12 @@ class msi_2(wmf.SimuBasin):
         # ya que uno es la corrida operacional y otro el histórico
         if anno <= 2016:
             self.ruta_humedad = "/var/datos_hidrologia/MSI/LocalModel/His_Humedad/bin_storage_1h_v1/E260_1h_90m_2015_2016"
-        elif anno <= 2020:
+        elif (self.fecha <= _datetime.datetime(2020,6,6)) :
             self.ruta_humedad = "/var/datos_hidrologia/MSI/LocalModel/His_Humedad/bin_storage_1h_v1/E260_1h_90m_2017_2020"
+        elif self.fecha <= _datetime.datetime(2021,2,11):
+            self.ruta_humedad = "/var/datos_hidrologia/hist_SMsim_WMF/SMsim_20200606-20210220"
+        elif (self.fecha <= _datetime.datetime(2022,12,30)) & (self.fecha >= _datetime.datetime(2021,2,15)):
+            self.ruta_humedad = "/var/datos_hidrologia/hist_SMsim_WMF/SMsim_20210215-20221230"
         else:
             self.ruta_humedad ='/home/hidrologia/jupyter/SH_op/SHop_E260_90m_1h/SHop/project_files/results/results_op/Sto_op-p01-ci2-1d'
         #self.ruta_humedad = '/home/hidrologia/jupyter/SH_op/SHop_E260_90m_1h/SHop/project_files/results/results_op/Sto_op-p01-ci2-1d' if ruta_humedad is None else ruta_humedad
@@ -123,7 +133,8 @@ class msi_2(wmf.SimuBasin):
         '''
         return info
     ## Función de humedad
-    def generar_mapa_humedad(self, umbrales_humedad = [0,100,150,200,250,300,350,400,100000000], probabilidad_humedad = [0.9,0.9,0.8,0.7,0.5,0.15,0.05,0]):
+    def generar_mapa_humedad(self, umbrales_humedad = [0,100,150,200,250,300,350,400,100000000], 
+                             probabilidad_humedad = [0.9,0.9,0.8,0.7,0.5,0.15,0.05,0]):
         #Lectura de la cuenca
         self.cu = wmf.SimuBasin(rute= self.ruta_nc)
         #path = ruta_humedad
@@ -133,7 +144,9 @@ class msi_2(wmf.SimuBasin):
         IDs=np.array([int(i.split(',')[0]) for i in filelines[5:]])
         fechas=np.array([(i.split(',')[-1]) for i in filelines[5:]])
         fechas = [i.strip() for i in fechas]
+        #fecha_provicional = _datetime.datetime(2023,8,3,14)
         fecha_str_h = self.fecha.strftime("%Y-%m-%d-%H:00")
+        #fecha_str_h = fecha_provicional.strftime("%Y-%m-%d-%H:00")
         print("el día consultado de humedad es:", fecha_str_h)
         ind = fechas.index(fecha_str_h) +1
         print(len(fechas))
@@ -154,6 +167,39 @@ class msi_2(wmf.SimuBasin):
         return self.mapa_humedad
     
     
+    def generar_mapa_humedad_porcen(self, umbrales_humedad = [0,0.20,0.40,0.60,0.70,0.80,0.90,1], probabilidad_humedad = [0.9,0.8,0.7,0.5,0.15,0.05,0]):
+        """Esta función es una nueva alternativa para el mapa de humedad del suelo, considerando el porcentaje de llenado de los tanques"""
+        #Lectura de la cuenca
+        self.cu = wmf.SimuBasin(rute= self.ruta_nc)
+        #path = ruta_humedad
+        f=open(self.ruta_humedad+'.StOhdr', newline="\n")
+        filelines=f.readlines()
+        f.close()
+        IDs=np.array([int(i.split(',')[0]) for i in filelines[5:]])
+        fechas=np.array([(i.split(',')[-1]) for i in filelines[5:]])
+        fechas = [i.strip() for i in fechas]
+        fecha_str_h = self.fecha.strftime("%Y-%m-%d-%H:00")
+        print("el día consultado de humedad es:", fecha_str_h)
+        ind = fechas.index(fecha_str_h) +1
+        print(len(fechas))
+        print(ind)
+        self.mapa_humedad_tanques, self.R = wmf.models.read_float_basin_ncol(self.ruta_humedad + '.StObin',ind, self.cu.ncells, 5)
+        
+        hum_gravita = wmf.models.max_gravita
+        hum_gravita[hum_gravita==np.nan] = np.nanmax(hum_gravita)
+        hum_gravita[hum_gravita==0] = np.nanmax(hum_gravita)
+        hum_capi = wmf.models.max_capilar
+        hum_capi[hum_capi==np.nan] = np.nanmax(hum_capi)
+        hum_capi[hum_capi== 0] = np.nanmax(hum_capi)
+        
+        # self.mapa_humedad_tanques[2][self.mapa_humedad_tanques[2] >hum_gravita[0]] = 74.6576
+        
+       # self.mapa_humedad_porcen = ((self.mapa_humedad_tanques[2]/hum_gravita[0])+(self.mapa_humedad_tanques[0]/hum_capi[0]))/2
+        self.mapa_humedad_porcen =((self.mapa_humedad_tanques[0] + self.mapa_humedad_tanques[2])/(hum_gravita[0]+hum_capi[0]))
+        #for i, probabilidad in enumerate(probabilidad_humedad):
+        #    self.mapa_humedad_porcen[(self.mapa_humedad_porcen >= umbrales_humedad[i])&(self.mapa_humedad_porcen <= umbrales_humedad[i + 1])] = probabilidad_humedad[i]
+        
+        return self.mapa_humedad_porcen
     #Funciones temperatura
     
     def generar_mapa_temperaturas(self, temperatura_wrf= None, reglas_temperatura = None, percentil_reglas = 'P75', prop = [135, 135, -76.77193450927734, 5.008949279785156, 0.0179290771484375, 0.01798248291015625, -9999]):
@@ -190,7 +236,15 @@ class msi_2(wmf.SimuBasin):
         
         #cargado de la temperatura
         if type(self.temperatura_wrf) == str:
-            self.mapa_temperatura_ambiente = pd.read_csv(self.temperatura_wrf, header=None, delim_whitespace=True).values[::-1].T
+            try:
+                self.mapa_temperatura_ambiente = pd.read_csv(self.temperatura_wrf, header=None, delim_whitespace=True).values[::-1].T
+            except:
+                print("No está disponible el archivo de para hoy")
+                self.hoy = _datetime.datetime.strftime(self.fecha- _datetime.timedelta(hours=24), "%Y-%m-%d_%H") # Poner la fecha en el formato con que se guardan los archivos
+                self.hoy_utc = _datetime.datetime.strftime(self.fecha_utc - _datetime.timedelta(hours=24), "%Y-%m-%d_%H")
+                self.temperatura_wrf = self.ruta_temp + str(self.hoy_utc) +"_05"  if temperatura_wrf is None else temperatura_wrf
+                self.mapa_temperatura_ambiente = pd.read_csv(self.temperatura_wrf, header=None, delim_whitespace=True).values[::-1].T
+                
         elif type(self.temperatura_wrf) == np.ndarray:
             self.mapa_temperatura_ambiente = self.temperatura_wrf[::-1].T
         elif isinstance(self.temperatura_wrf, pd.DataFrame):
@@ -235,10 +289,96 @@ class msi_2(wmf.SimuBasin):
 
         idx = (self.mapa_temperatura_ambiente >= self.__ajuste_temperatura_ambiente__[-1])
         self.mapa_temperatura_superficial[idx] =  np.poly1d(np.polyfit(self.__ajuste_temperatura_ambiente__[-2:], self.__ajuste_temperatura_superficial__[-2:], 1))(self.mapa_temperatura_ambiente[idx])
-
         return self.mapa_temperatura_superficial
     
-    def generar_mapa_lluvia(self, lluvia_radar = None, fecha_inicio = None, fecha_fin = None, dias_acumulado = 10, umbral_sequia = 6, prop = [1728, 1728, -76.82, 4.9, 0.0015, 0.0015, 999999]):
+    
+    def generar_mapa_temperaturas_regresion(self):
+        """
+        Temporal por falta de datos en el modelo
+        Se crea un mapa de temperaturas a partir de una regresión lineal con datos de estaciones meteorológicas
+        teniendo en cuenta la altura sobre el nivel del mar a la cual se encuentra la estación.
+        """
+        
+        #consulta estaciones y condiciones
+        def consulta_estaciones_meteo():
+            """Función para consultar todas las estaciones de nivel activas y en
+            prueba"""
+            sentencia = """SELECT codigo, NombreEstacion AS nombre, latitude, longitude, AlturaNivelMar,
+                red, ciudad, subcuenca, estado FROM estaciones WHERE red in ('meteorologica', 'meteorologica_thiess') and
+                (estado = 'A' or estado ='P') """
+            metadatos = _hidro.bd.sql_query(sentencia)
+            metadatos.set_index("codigo", inplace=True)
+            return metadatos
+
+        estaciones_met = consulta_estaciones_meteo()
+        estaciones_met = estaciones_met.sort_index()[estaciones_met.estado == 'A'][estaciones_met.ciudad!='Puerto Triunfo']
+        
+        
+        temp = pd.DataFrame()#columns=[estaciones_met.index])
+        #fechas consulta
+        fecha_i = self.fecha - pd.Timedelta(minutes=10)
+        fi = _datetime.datetime.strftime(fecha_i, "%Y-%m-%d")
+        hi = _datetime.datetime.strftime(fecha_i, "%H:%M:00")
+        ff = _datetime.datetime.strftime(self.fecha, "%Y-%m-%d")
+        hf = _datetime.datetime.strftime(self.fecha, "%H:%M:00")
+
+        for e in estaciones_met.index:
+            try:
+                meteo = _hidro.meteorologica.consulta_meteo(str(e), fi, ff, hi, hf).data()
+                #temp[e] = meteo.resample('20min').mean()['T'].values[0]
+                temp[e] = meteo['T']
+            except:
+                temp[e] = np.nan
+        
+        temp = temp.resample('20min').mean()
+        print(temp)
+        
+        alts = []
+        for i in temp.columns:
+            alt = float(estaciones_met.loc[i,'AlturaNivelMar'])
+            alts.append(alt)
+            
+        temperaturas = temp.values.astype('float')[0]
+        alt = np.array(alts).astype('float')
+        x = np.linspace(alt.min(), alt.max(), 100)
+        
+        valid_mask = np.isfinite(temperaturas) & np.isfinite(alt)
+        t2_mask = temperaturas[valid_mask]
+        altura_mask = alt[valid_mask]
+        alts = np.array(alts).astype('float')
+        pol = np.poly1d(np.polyfit(altura_mask, t2_mask, 1))
+        y = pol(x)
+        print('\nRegresión: ',pol)
+        
+        dem = self.DEMvec.data
+        self.mapa_temperatura_regresion = pol(dem)
+        
+        return self.mapa_temperatura_regresion
+        
+    
+    
+    def generar_mapa_temperaturas_probabilidad(self, umbrales_temp = [15,20,25,30,35, 40],
+                                               probabilidad_temp = [0.05, 0.2, 0.35, 0.65, 0.8]):
+        """"
+        En esta función se crea el mapa de probabilidad de temperaturas partiendo del 
+        mapa de temperatura superficial
+        Estos umbrales y probabilidades están sujetas a revisión y cambio
+        """
+        #generamos el mapa de temperatura superficial 
+        try:
+            self.generar_mapa_temperaturas()
+            self.mapa_probabilidad_tem = np.zeros_like(self.mapa_temperatura_superficial)
+        except:
+            self.generar_mapa_temperaturas_regresion()
+            self.mapa_probabilidad_tem = np.zeros_like(self.mapa_temperatura_regresion)
+        
+        for i, probabilidad in enumerate(probabilidad_temp):
+            self.mapa_probabilidad_tem[(self.mapa_temperatura_superficial >= umbrales_temp[i])&(self.mapa_temperatura_superficial <= umbrales_temp[i + 1])] = probabilidad_temp[i]
+            
+        return self.mapa_probabilidad_tem
+
+
+    def generar_mapa_lluvia(self, lluvia_radar = None, fecha_inicio = None, fecha_fin = None, dias_acumulado = 7, umbral_sequia = 6, prop = [1728, 1728, -76.82, 4.9, 0.0015, 0.0015, 999999]):
         '''
         Genera un mapa de lluvia de radar para la cuenca y un mapa de sequia (ver definicion de mapa de sequia en la documentacion del modelo), a partir de indicar la fecha de inicio y de fin, para el caso en que se lea la lluvia de radar de una carpeta con archivos netcdf de lluvia de radar (para esto se requiere haber ingresado una ruta a self.ruta_lluvia). Ademas se pueden ingresar matrices con la lluvia siempre y cuando se agrege la lista de atributos de esta para reconstruir las longitudes y latitudes, en el argumento prop, como se muestra en la lista de parametros de la funcion desritos a continuacion:
         
@@ -254,7 +394,7 @@ class msi_2(wmf.SimuBasin):
         ----------
         prop            : Propiedades del mapa de lluvia -> [ncolumnas, nfilas, xll, yll, dx, dy, no_data]
         '''
-        
+        print("***************************************", lluvia_radar)
         #cargado de la lluvia mediante un archivo nc de radar 
         if (type(lluvia_radar) == str)&(str(lluvia_radar[:]).split('.')[-1] == 'nc'):
             datos = Dataset(lluvia_radar)
@@ -283,17 +423,25 @@ class msi_2(wmf.SimuBasin):
         if os.path.isdir(lluvia_radar)&(fecha_inicio != None)&(fecha_fin != None):
             
             from glob import glob
-            
-            fecha_inicio = pd.to_datetime(fecha_inicio) + pd.Timedelta('5h')
-            fecha_fin = pd.to_datetime(fecha_fin) + pd.Timedelta('5h')
+            if self.ruta_lluvia != "/var/radar/operacional/":
+                print("vamos a trabajar con los datos interpolados")
+                fecha_inicio = pd.to_datetime(fecha_inicio)
+                fecha_fin = pd.to_datetime(fecha_fin)
+            else:
+                print("Vamos a convertir en utc")
+                fecha_inicio = pd.to_datetime(fecha_inicio) + pd.Timedelta('5h')
+                fecha_fin = pd.to_datetime(fecha_fin) + pd.Timedelta('5h')
+                
             ruta_radar = lluvia_radar
             dias = pd.date_range(fecha_inicio, fecha_fin, freq = '1d')
             lluvia_radar = np.concatenate([glob(lluvia_radar + '/' + dia.strftime('%Y%m%d') + '*') for dia in dias])
             lluvia_radar = np.sort(lluvia_radar, kind = 'qsort')
             lluvia_radar = pd.Series(lluvia_radar).apply(lambda ruta: pd.to_datetime(ruta.split('/')[-1].split('_')[0], format = '%Y%m%d%H%M'))
+            
             lluvia_radar = lluvia_radar[(lluvia_radar >= fecha_inicio)&(lluvia_radar <= fecha_fin)]
             lluvia_radar = [ruta_radar + '/' + fecha.strftime('%Y%m%d%H%M') + '_010_120.nc' for fecha in lluvia_radar]
             rutas = list(lluvia_radar)[::-1]
+           # print("Estas son las rutas: ", rutas)
             
             self.mapa_lluvia_radar = np.zeros(self.ncells)
             mapa_tiempo_sequia = np.zeros(self.ncells)
@@ -303,23 +451,31 @@ class msi_2(wmf.SimuBasin):
             fecha_maxima = pd.to_datetime(rutas[np.argmax([int(i.split('/')[-1].split('_')[0]) for i in rutas])].split('/')[-1].split('_')[0], format = '%Y%m%d%H%M')
             print(fecha_maxima)
             for ruta in rutas:
+                print(ruta)
                 fecha = pd.to_datetime(ruta.split('/')[-1].split('_')[0], format = '%Y%m%d%H%M')
                 try:
                     datos = Dataset(ruta)
-                    self.mapa_lluvia_radar = self.mapa_lluvia_radar + self.Transform_Map2Basin(datos.variables['Rain'][:].T / (12*1000), prop)
+                    print("leí el nnc")
+                    if self.ruta_lluvia != "/var/radar/operacional/":
+                        print("Entré a lluvia interpol")
+                        self.mapa_lluvia_radar = self.mapa_lluvia_radar + self.Transform_Map2Basin(np.fliplr(datos.variables['Rain'][:].T), [80, 74, -75.819430, 5.878178, 0.01,  0.009999999999999787])
+                        print("convertí a basin")
+                    else:
+                        print("Entré a lluvia normal")
+                        self.mapa_lluvia_radar = self.mapa_lluvia_radar + self.Transform_Map2Basin(datos.variables['Rain'][:].T / (12*1000), prop)
                     
                     f = fecha_maxima - fecha
                     mapa_tiempo_sequia[self.mapa_lluvia_radar < 6] = f.components.days + f.components.hours/24 + f.components.minutes/(24 * 60)
                     
                     datos.close()
                 
-                except:
+                except Exception as e:
+                    print(e, "==========================================")
                     print('Archivo no valido:', ruta)
                 
             self.mapa_tiempo_sequia = mapa_tiempo_sequia
                     
             print('Acumular la lluvia ha tardado:', _datetime.datetime.now() - hora)
-            
             
         else:
             raise Exception('Entrada no valida para lluvia_radar, debe ser un array, una ruta a un archivo nc de lluvia acumulada, una lista de rutas de nc o la ruta a la carpeta que contiene dichos archivos indicando fecha inicio y fecha fin para obetner los acumulados')
@@ -327,6 +483,83 @@ class msi_2(wmf.SimuBasin):
         print('Se ha estimado el tiempo de sequia por celda (tiempo que la celda lleva sin superar el umbral de lluvia acumulada en milimetros, por defecto son 6mm), ver self.mapa_tiempo_sequia')
         return self.mapa_lluvia_radar
     
+    
+    def generar_mapa_lluvia_interpolacion(self, dias_atras=None, minutos_atras = None):
+        from pykrige.ok import OrdinaryKriging
+
+        # Consulta de todas las estaciones de pluviómetro activas dentro del Valle
+        Estaciones = _hidro.bd.sql_query("SELECT distinct codigo, ciudad, Latitude, Longitude, AlturaNivelMar FROM  "
+                    "estaciones WHERE red in ('pluviografica') AND estado in ('A','P') "
+                    "AND FechaInstalacion < '2022-01-01' AND ciudad in "
+                    "('Medellin','Barbosa', 'Girardota', 'Copacabana', 'Bello', "
+                    "'Sabaneta', 'Itagui', 'La Estrella', 'Caldas', 'Envigado');")
+        Estaciones.Latitude = Estaciones.Latitude.astype(float)
+        Estaciones.Longitude = Estaciones.Longitude.astype(float)
+
+        #Informacion de fechas para consultr lo últimos 7 días de este momento hacia atrás
+        fecha_actual_dt = self.fecha#dt.datetime.today()
+        if dias_atras is not None:
+            fecha_anterior_dt = fecha_actual_dt - _datetime.timedelta(days = dias_atras)
+        elif minutos_atras is not None:
+            fecha_anterior_dt = fecha_actual_dt - _datetime.timedelta(minutes = minutos_atras)
+        fecha_anterior_dt = fecha_actual_dt - _datetime.timedelta(days=7)
+        fec_fin = fecha_actual_dt.strftime("%Y-%m-%d")
+        fec_ini = fecha_anterior_dt.strftime("%Y-%m-%d")
+        hora_ini = fecha_anterior_dt.strftime("%H:%M:00")
+        hora_fin = fecha_actual_dt.strftime("%H:%M:00")
+        print(fec_ini, hora_ini, fec_fin, hora_fin)
+        filtro = 'si'
+
+        #Recorremos cada estacion para obtener su acumulado
+        #vector para almacena el acumulado de cada estacion
+        Acumulado = []
+        for est in Estaciones.codigo:
+            # Para una sola estacion
+            EstacionP = est
+            #Llamamos la clase 
+            df_pluvio = _hidro.pluviometro.consulta_pluvio(EstacionP,fec_ini,fec_fin,hora_ini,
+                                            hora_fin,filtro)
+            #Agregamos el acumulado de la estacion al vector}
+            if len(df_pluvio) == 0:
+                Acumulado.append(np.nan)
+            else:
+                Acumulado.append(df_pluvio.P.sum())
+        #Convertimos el vector en una columna del DF
+        Estaciones['Acumulado'] = Acumulado
+        Estaciones = Estaciones.dropna()
+        #Parámetros de interpolación y graficación 
+        min_lat = 5.878178; min_lon = -75.819430
+        max_lat = 6.612488; max_lon = -75.022057
+
+        lons=np.array(Estaciones.Longitude.values)
+        lats=np.array(Estaciones.Latitude.values)
+        data=np.array(Estaciones.Acumulado.values)
+
+        #Construimos la malla de interpolacion
+        grid_space = 0.01
+        grid_lon = np.arange(min_lon, max_lon, grid_space) #grid_space is the desired delta/step of the output array
+        grid_lat = np.arange(min_lat, max_lat, grid_space)
+        lat_map,lon_map = np.meshgrid(grid_lat,grid_lon)
+        
+        # Este condicional es porque la función de interpolación solapasa si todos los puntos son 0
+        if Estaciones.Acumulado.max() ==0:
+            print("no ha llovido en el tiempo indicado")
+            z1=np.zeros((74,80))
+        else:
+            
+            #Obtenemos la interpolacion con el metodo de kriging
+            OK = OrdinaryKriging(lons, lats, data, variogram_model='spherical', 
+                                verbose=True, enable_plotting=False,
+                                coordinates_type = 'geographic', nlags = 10)
+            z1, ss1 = OK.execute('grid', grid_lon, grid_lat)
+
+            z1 = z1.data
+            z1[z1<0]=0
+            
+        self.mapa_lluvia_interpol = self.Transform_Map2Basin(np.fliplr(z1.T), [80, 74, min_lon, min_lat, 0.01,  0.009999999999999787])
+        return self.mapa_lluvia_interpol, Estaciones
+
+        
     def generar_mapa_lluvia_probabilidad(self, lluvia_radar = None, fecha_inicio = None, fecha_fin = None, dias_acumulado = 7, umbral_sequia = 6, umbrales_acumulados = [0,30,60,90,120,150,500], probabilidad_acumulados = [0.58,0.25,0.2,0.08,0.05,0.02], umbrales_dias_sequia = [4, 7], prop = [1728, 1728, -76.82, 4.9, 0.0015, 0.0015, 999999]):
         
         '''
@@ -339,16 +572,18 @@ class msi_2(wmf.SimuBasin):
         fecha_inicio    : Si se ha creado una instancia del modelo ingresando la ruta de la carpeta con los archivos .nc de acumulados de lluvia se puede escoger una fecha de inicio y una fecha de fin para acumular la lluvia de todos los archvios entre estas fechas. Este argumento puede ser None y solo escoger un valor para fecha_fin y una cantidad de dias para acumular la lluvia antecedente a dicha fecha.
         dias_acumualdo  : Si se utilizan fechas para acumular la lluvia, se puede escoger una cantidad de dias de lluvia antecedente y solo asignar una fecha_fin para acumular la lluvia hacia atras de dicha fecha
         umbral_sequia   : Para generar el mapa de dias de sequia se escoge un umbral por debajo del cual se considera que en un pixel se presento una condicion de sequia, el valor se escoge en milimetros de columna de agua
-        
+        s 
         Opcionales:
         ----------
         prop            : Propiedades del mapa de lluvia -> [ncolumnas, nfilas, xll, yll, dx, dy, no_data]
         '''
         
         
-        
+        #try:
         self.generar_mapa_lluvia(lluvia_radar = lluvia_radar, fecha_inicio = fecha_inicio, fecha_fin = fecha_fin, dias_acumulado = dias_acumulado, umbral_sequia = umbral_sequia)
-        
+        #except:
+        #    self.mapa_lluvia_radar = self.generar_mapa_lluvia_interpolacion()
+            
         self.mapa_probabilidad_acumulados = np.zeros_like(self.mapa_lluvia_radar)
         self.mapa_probabilidad_sequia = np.zeros_like(self.mapa_lluvia_radar)
         
@@ -382,7 +617,42 @@ class msi_2(wmf.SimuBasin):
         prop            : Propiedades del mapa de lluvia -> [ncolumnas, nfilas, xll, yll, dx, dy, no_data]
         '''
         
+
         Hum = self.generar_mapa_humedad()
+        try:
+            Temp = self.generar_mapa_temperaturas()
+        except:
+            print('\nSe genera el mapa con regresión:')
+            Temp= self.generar_mapa_temperaturas_regresion() #Temperatura con regresión en caso de que el modelo falte
+        
+        Rain = self.generar_mapa_lluvia_probabilidad(self.ruta_lluvia, self.fecha -
+                                                      _datetime.timedelta(days=7),self.fecha)
+        mask_temp = np.zeros_like(self.mapa_estatico)
+        mask_temp[np.where(Temp >20)[0]] = 1
+        ## Coeficientes:
+        Wr=0.45 ; Wh=0.22 ; We=0.14 ; Whist=0.19
+        self.mapa_final = (Wr*Rain)+ (We*self.mapa_estatico) + (Whist*self.mapa_historico) + (Wh*Hum)
+        self.mapa_final = self.mapa_final*mask_temp
+        mascara=pd.read_csv(self.ruta_urbano,header=None, dtype=int).values
+        self.mapa_final_urban= self.mapa_final.copy()
+        mascara = mascara.reshape(mascara.shape[0])
+        self.mapa_final_urban[mascara]=None
+        return self.mapa_final, self.mapa_final_urban
+    
+    def generar_mapa_final_new_hum(self):
+        '''
+        Genera un mapa de de porbabilidad a la ocurrencia de incendios teniendo en cuenta la lluvia precedente, la humedad y temperatura del suelo y otros parámetros históricos
+        
+        Parametros 
+        ----------
+        temperatura_wrf    : Ruta para cargar el archivo que contiene la temperatura del aire generada por el model WRF
+        
+        Opcionales:
+        ----------
+        prop            : Propiedades del mapa de lluvia -> [ncolumnas, nfilas, xll, yll, dx, dy, no_data]
+        '''
+        
+        Hum = self.generar_mapa_humedad_porcen()
         Temp = self.generar_mapa_temperaturas()
         Rain = self.generar_mapa_lluvia_probabilidad(self.ruta_lluvia, self.fecha -
                                                       _datetime.timedelta(days=7),self.fecha)
@@ -390,6 +660,40 @@ class msi_2(wmf.SimuBasin):
         mask_temp[np.where(Temp >19)[0]] = 1
         ## Coeficientes:
         Wr=0.45 ; Wh=0.22 ; We=0.14 ; Whist=0.19
+        self.mapa_final = (Wr*Rain)+ (We*self.mapa_estatico) + (Whist*self.mapa_historico) + (Wh*Hum)
+        self.mapa_final = self.mapa_final*mask_temp
+        mascara=pd.read_csv(self.ruta_urbano,header=None, dtype=int).values
+        self.mapa_final_urban= self.mapa_final.copy()
+        mascara = mascara.reshape(mascara.shape[0])
+        self.mapa_final_urban[mascara]=None
+        return self.mapa_final, self.mapa_final_urban
+    
+    
+    def generar_mapa_final_manual(self, Wh, Wr, We, Whist, Wt):
+        '''
+        Genera un mapa de de probabilidad a la ocurrencia de incendios teniendo
+        en cuenta la lluvia precedente, la humedad y temperatura del suelo y 
+        otros parámetros históricos
+        
+        Parametros 
+        ----------
+        temperatura_wrf    : Ruta para cargar el archivo que contiene la tempe-
+        ratura del aire generada por el model WRF
+        
+        Opcionales:
+        ----------
+        prop            : Propiedades del mapa de lluvia -> [ncolumnas, nfilas,
+        xll, yll, dx, dy, no_data]
+        '''
+        
+        Hum = self.generar_mapa_humedad()
+        Temp = self.generar_mapa_temperaturas()
+        Rain = self.generar_mapa_lluvia_probabilidad(self.ruta_lluvia, self.fecha -
+                                                      _datetime.timedelta(days=7),self.fecha)
+        mask_temp = np.zeros_like(self.mapa_estatico)
+        mask_temp[np.where(Temp >19)[0]] = 1
+        ## Coeficientes:
+        #Wr=0.45 ; Wh=0.22 ; We=0.14 ; Whist=0.19
         self.mapa_final = (Wr*Rain)+ (We*self.mapa_estatico) + (Whist*self.mapa_historico) + (Wh*Hum)
         self.mapa_final = self.mapa_final*mask_temp
         mascara=pd.read_csv(self.ruta_urbano,header=None, dtype=int).values
